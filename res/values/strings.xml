@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Quick Share</string>
+    <string name="svc_channel">Transfers</string>
+    <string name="svc_title">Quick Share</string>
+    <string name="svc_text">Ready to receive files</string>
+    <string name="incoming_channel">Incoming files</string>
+    <string name="incoming_title">Incoming files</string>
+</resources>
