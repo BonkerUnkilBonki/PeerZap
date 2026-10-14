@@ -1,4 +1,4 @@
-/* Quick Share panel — the bottom sheet opened from the Quick Settings tile.
+/* PeerZap panel — the bottom sheet opened from the Quick Settings tile.
    Sends and receives without opening the full app, and has its own file picker
    so choosing files stays inside the panel. Same design language as the app. */
 (function () {
@@ -22,6 +22,7 @@
 
   var S = { mode: 'send', devices: [], pending: [], incoming: [], transfers: [], localIp: '', running: false,
             picker: false,
+
             settings: { deviceName: 'This device', visible: true, glass: true } };
 
   // in-panel file picker state
@@ -83,17 +84,31 @@
       (ICON[name] || ICON.file) + '</svg>';
   }
 
+
+  /* Progress arrives in steps (the bridge is polled), so the number is tweened to the
+     new value instead of snapping to it. The ring's --p is transitioned by CSS. */
+  function setPct(el, to) {
+    if (!el) return;
+    var from = Number(el.getAttribute('data-pct') || '0');
+    to = Number(to) || 0;
+    el.setAttribute('data-pct', String(to));
+    if (from === to || !window.requestAnimationFrame) { el.textContent = to + '%'; return; }
+    var start = null, dur = 900;
+    function step(now) {
+      if (start === null) start = now;
+      var k = Math.min(1, (now - start) / dur);
+      // ease-out cubic, so it settles rather than stopping dead
+      var e = 1 - Math.pow(1 - k, 3);
+      el.textContent = Math.round(from + (to - from) * e) + '%';
+      if (k < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
   function toast(msg) {
-    var box = $('toasts');
-    var t = document.createElement('div');
-    t.className = 'toast';
-    t.textContent = msg;
-    box.appendChild(t);
-    requestAnimationFrame(function () { t.classList.add('show'); });
-    setTimeout(function () {
-      t.classList.remove('show');
-      setTimeout(function () { try { box.removeChild(t); } catch (e) {} }, 300);
-    }, 1900);
+    // Toasts are hidden by request: the app no longer pops up confirmations for
+    // file selection or anything else. Kept as a function so callers are unchanged.
+    return;
   }
 
   /* The panel uses the same theme, accent and glow as the app. */
@@ -146,7 +161,7 @@
 
     $('psub').textContent = S.picker
       ? 'Pick files to send'
-      : (S.mode === 'send' ? 'Send files to a nearby device' : 'Receive files from a nearby device');
+      : (S.mode === 'send' ? 'Direct. Fast. Effortless.' : 'Direct. Fast. Effortless.');
 
     var body = $('pbody');
     body.innerHTML = S.picker ? pickerView() : (S.mode === 'send' ? sendView() : receiveView());
@@ -159,9 +174,14 @@
       '</div>';
   }
 
-  function activeTransfers() {
+  /* dir 'send' or 'recv'; omit for either. A receive must never show under Send. */
+  function activeTransfers(dir) {
     return (S.transfers || []).filter(function (t) {
-      return t.status === 'active' || t.status === 'waiting';
+      var live = t.status === 'active' || t.status === 'waiting';
+      if (!live) return false;
+      if (!dir) return true;
+      var d = t.dir === 'recv' ? 'recv' : 'send';
+      return d === dir;
     });
   }
 
@@ -178,7 +198,7 @@
 
   /** Live progress for any running transfer, shown in both Send and Receive. */
   function progressHtml() {
-    var a = activeTransfers();
+    var a = activeTransfers('recv');
     return a.length ? a.map(progressCard).join('') : '';
   }
 
@@ -199,8 +219,7 @@
       var ring = n.querySelector('.ring');
       if (ring) {
         ring.style.setProperty('--p', pct);
-        var b = ring.querySelector('b');
-        if (b) b.textContent = pct + '%';
+        setPct(ring.querySelector('b'), pct);
       }
       var bar = n.querySelector('.upbar i');
       if (bar) bar.style.width = pct + '%';
@@ -215,7 +234,12 @@
   }
 
   function sendView() {
-    var h = progressHtml();
+    // once the receiver has accepted, the send shows the same centred ring as a
+    // receive - the card at the top is replaced, not duplicated
+    var sending = activeTransfers('send');
+    // only a send belongs here; progressHtml() renders receives and must not be
+    // used as a fallback, or an inbound transfer shows up under Send
+    var h = sending.length ? centeredProgress(sending[0]) : '';
     if (S.pending.length) {
       var total = S.pending.reduce(function (a, f) { return a + (Number(f.size) > 0 ? Number(f.size) : 0); }, 0);
       h += '<div class="pbadge">' + svg('file') +
@@ -228,25 +252,39 @@
     }
     h += '<div class="sect" style="margin:18px 2px 6px">Nearby devices' +
       (S.devices.length ? ' · ' + S.devices.length : '') + '</div>';
-    h += S.devices.length
-      ? S.devices.map(function (d) {
-          return '<div class="pdev" data-act="send" data-id="' + esc(d.id) + '">' +
-            '<span class="devav">' + svg('device') + '</span>' +
-            '<div class="lmain"><div class="ltitle">' + esc(d.name || 'Device') + '</div>' +
-            '<div class="lsub">' + esc(d.ip || '') + '</div></div>' +
-            '<span class="chip" style="' + (S.pending.length ? '' : 'opacity:.55') + '">' + (S.pending.length ? 'Send' : '—') + '</span></div>';
-        }).join('')
-      : '<div class="pempty">' + (S.running ? 'Scanning the network…' : 'Starting…') +
-        '<br>Make sure the other device has Quick Share open on the same Wi-Fi.</div>';
+    if (S.devices.length) {
+      h += S.devices.map(function (d) {
+        return '<div class="pdev" data-act="send" data-id="' + esc(d.id) + '">' +
+          '<span class="devav">' + svg('device') + '</span>' +
+          '<div class="lmain"><div class="ltitle">' + esc(d.name || 'Device') + '</div>' +
+          '<div class="lsub">' + esc(d.ip || '') + (d.direct ? ' · Direct link' : '') + (d.stock ? ' · Quick Share' : '') + '</div></div>' +
+          '<span class="chip" style="' + (S.pending.length ? '' : 'opacity:.55') + '">' + (S.pending.length ? 'Send' : '—') + '</span></div>';
+      }).join('');
+    } else {
+      h += '<div class="pempty">' + (S.running ? 'Scanning the network…' : 'Starting…') +
+        '<br>Make sure the other device has PeerZap open on the same Wi-Fi.</div>';
+    }
     return h;
   }
 
+  /* While receiving: one big centred ring and the file name, nothing else. */
+  function centeredProgress(t) {
+    var pct = t.size > 0 ? Math.min(100, Math.round((t.done || 0) / t.size * 100)) : 0;
+    return '<div class="centerprog centerprog-in">' +
+      '<span class="ring bigring" style="--p:' + pct + '"><b data-pct="' + pct + '">' + pct + '%</b></span>' +
+      '<div class="lsub" style="margin-top:14px;text-align:center">' +
+        (t.dir === 'send' ? 'Sending to ' : 'Receiving from ') + esc(t.peer || 'device') + '</div>' +
+      '<div class="lsub" style="margin-top:4px;text-align:center;white-space:normal">' +
+        esc(t.current || '') + '</div>' +
+      '</div>';
+  }
+
   function receiveView() {
-    var h = progressHtml();
-    h += '<div class="setrow" style="margin:6px 0 4px"><div class="lmain">' +
-      '<div class="ltitle">Visible to nearby devices</div>' +
-      '<div class="lsub" style="white-space:normal">Let other phones find this device</div></div>' +
-      '<div class="switch' + (S.settings.visible ? ' on' : '') + '" data-act="visible"></div></div>';
+    // A request waiting on the user's answer shows only the card - no progress, since
+    // nothing is being received yet.
+    var pending = (S.incoming || []).some(function (i) { return !i.auto; });
+    var active = activeTransfers('recv');
+    var h = (pending || !active.length) ? '' : centeredProgress(active[0]);
 
     h += '<div class="pbadge" style="margin-top:10px">' +
       (S.running ? '<span class="pulse" style="width:8px;height:8px;display:inline-block"></span>' : '') +
@@ -260,12 +298,16 @@
           var names = (inc.files || []).slice(0, 4).map(function (n) {
             return '<div class="lsub" style="white-space:normal">' + esc(n) + '</div>';
           }).join('');
-          return '<div class="pdev" style="flex-direction:column;align-items:stretch">' +
-            '<div class="ltitle">From ' + esc(inc.peer || 'Device') + '</div>' +
-            '<div class="lsub">' + (inc.count || 0) + ' file(s) · ' + fmtSize(inc.size || 0) + '</div>' +
-            '<div style="margin-top:6px">' + names + '</div>' +
-            '<div class="pact"><button class="btn danger" data-act="reject" data-id="' + esc(inc.id) + '">Decline</button>' +
-            '<button class="btn primary" data-act="accept" data-id="' + esc(inc.id) + '">Accept</button></div></div>';
+          return '<div class="pdev reqcard" style="flex-direction:column;align-items:stretch">' +
+            (inc.pin && !inc.auto
+              ? '<div class="pinbig">PIN ' + esc(inc.pin) + '</div>' : '') +
+            '<div class="lsub" style="text-align:center">' + (inc.count || 0) + ' file(s)</div>' +
+            '<div style="margin-top:6px;text-align:center">' + names + '</div>' +
+            (inc.auto
+              ? '<div class="pact"><span class="chip">Receiving\u2026</span></div>'
+              : '<div class="pact"><button class="btn danger" data-act="reject" data-id="' + esc(inc.id) + '">Decline</button>' +
+                '<button class="btn primary" data-act="accept" data-id="' + esc(inc.id) + '">Accept</button></div>') +
+            '</div>';
         }).join('')
       : '<div class="pempty">Nothing waiting. Keep this panel open, or leave the app running, to receive files.</div>';
     return h;
@@ -401,12 +443,42 @@
       case 'pickadd': pkAdd(); break;
       case 'picksystem': if (QS && QS.pickFiles) QS.pickFiles(); S.picker = false; render(); break;
       case 'clear': if (QS) QS.clearPending(); S.pending = []; render(); break;
-      case 'send':
+      case 'send': {
         if (!S.pending.length) { toast('Choose files first'); S.mode = 'send'; render(); break; }
+        var dev = null;
+        for (var di = 0; di < S.devices.length; di++) {
+          if (S.devices[di].id === id) { dev = S.devices[di]; break; }
+        }
+        var isStock = dev && (dev.stock === true || String(dev.id || '').indexOf('qs:') === 0);
+        if (isStock) {
+          var r = QS.qsSendTo(id);
+          if (r === 'started') { toast('Sending to ' + (dev.name || 'device') + '…'); S.pending = []; S.mode = 'send'; render(); }
+          else if (r === 'no-files') toast('Choose files first');
+          else if (r === 'not-found') toast('That device is no longer nearby');
+          else if (r === 'no-address') toast('Could not reach that device');
+          else toast('Could not send (' + r + ')');
+          break;
+        }
+        if (String(id || '').indexOf('p2p:') === 0) {
+          var r = QS.qsDirectSend(id);
+          if (r === 'linking') { toast('Linking directly…'); S.pending = []; S.mode = 'send'; render(); }
+          else if (r === 'no-files') toast('Choose files first');
+          else if (r === 'not-found') toast('That device is no longer nearby');
+          else toast('Could not link (' + r + ')');
+          break;
+        }
         if (QS && QS.sendTo(id)) { toast('Sending…'); S.pending = []; S.mode = 'send'; render(); }
+        else toast('That device is not available for a direct send');
         break;
-      case 'accept': if (QS) QS.accept(id); break;
-      case 'reject': if (QS) QS.reject(id); break;
+      }
+      case 'accept':
+        if (id === 'qsconsent') { if (QS) QS.qsConsentAccept(); }
+        else if (QS) QS.accept(id);
+        break;
+      case 'reject':
+        if (id === 'qsconsent') { if (QS) QS.qsConsentReject(); }
+        else if (QS) QS.reject(id);
+        break;
       case 'visible':
         S.settings.visible = !S.settings.visible;
         if (QS) QS.setSetting('visible', String(S.settings.visible));
@@ -430,6 +502,7 @@
           S.incoming.push(inc);
           S.picker = false;
           S.mode = 'receive';
+          S.transfers = (S.transfers || []);
         }
         toast('Incoming files from ' + ((inc && inc.peer) || 'a device'));
         render();
@@ -446,6 +519,7 @@
     document.body.classList.add('panel-closing');
   };
 
+  var firstFetch = true;
   function refresh() {
     if (!QS || !QS.getState) return;
     try {
@@ -457,11 +531,26 @@
       S.running = !!st.running;
       if (st.settings) S.settings = Object.assign(S.settings, st.settings);
       if (st.pending && st.pending.length && !S.pending.length) S.pending = st.pending;
+      // A new request switches the panel to Receive by itself, so the user does not have
+      // to go and tap the tab - but only when they are not mid-send. The compat path
+      // publishes into getState rather than pushing an event, so this has to be noticed
+      // here rather than in the event handler.
+      var inc = st.incoming || [];
+      var fresh = inc.some(function (i) {
+        return !(S.incoming || []).some(function (x) { return x.id === i.id; });
+      });
+      var sending = (S.pending || []).length > 0 || activeTransfers('send').length > 0;
+      if ((firstFetch || fresh) && inc.length && !sending) {
+        S.mode = 'receive';
+      }
+      if (firstFetch) firstFetch = false;
     } catch (e) {}
     applyTheme();
   }
 
   function boot() {
+    // opened because something is arriving? land on Receive, not Send
+    try { if (S.incoming && S.incoming.length) S.mode = 'receive'; } catch (e) {}
     $('pscrim').addEventListener('click', function () { if (QS) QS.closePanel(); });
     $('pclose').addEventListener('click', function () { if (QS) QS.closePanel(); });
     document.addEventListener('click', function (e) {

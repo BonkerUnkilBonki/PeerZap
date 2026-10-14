@@ -7,7 +7,7 @@ and receives files without opening the app, and a built-in file manager browses
 everything on the device.
 
 - **Package:** `com.quickshare`
-- **Version:** 1.13 (versionCode 14)
+- **Version:** 1.71 (versionCode 73)
 - **Min / target / compile SDK:** 24 / 34 / 36
 - **Artifact:** `QuickShare.apk` (signed, installable)
 - **Workspace:** `/scratch/work/quickshare` (project), `/scratch/work/sdk` (toolchain)
@@ -213,6 +213,104 @@ the service for the duration and sets `setShutdownWhenIdle(true)`, which
 - **A standalone client: it talks to other copies of this app only.**
 - It does **not** implement Google's proprietary Quick Share protocol and cannot
   interoperate with Google Quick Share or Windows Quick Share.
+
+## 7b. Google Quick Share interoperability (in progress)
+
+A separate effort to talk to **stock Google Quick Share**. The protocol is
+reverse-engineered and documented; see **`QUICKSHARE-INTEROP.md`** for the plan,
+the status and the honest caveats.
+
+**Built** (`src/com/quickshare/qs/`): the protobuf wire codec, HKDF-SHA256, the
+AES-256-CBC + HMAC-SHA256 secure-message envelope, the **UKEY2 handshake**, the
+**D2D key derivation**, all the wire frames, a **sequence-numbered secure
+channel**, and the **receive session FSM**. **42 JVM checks pass** (`QsCoreTest`
+20, `QsUkey2Test` 16, `QsChannelTest` 6) - including RFC 5869 vectors, a full
+handshake where both sides derive identical secrets and mutually consistent
+traffic keys, encrypted exchange over a real socket, tamper detection and replay
+rejection.
+
+Android side (v1.15): `QsDiscovery` advertises `_FC9F5ED42C8A._tcp.` over
+`NsdManager`, `QsReceiveService` runs a `connectedDevice` foreground service, and
+**Settings > Google Quick Share** has the switch plus a live status line.
+
+**Field test (v1.16):** a stock Quick Share sender found the device on a real
+phone - so the mDNS advertisement and endpoint-info byte are correct - but the
+transfer failed. Three real bugs were found and fixed: payload transfer frames
+were missing the `packet_type` field (fatal - every negotiation message was
+unparseable), the receiver never sent its own paired-key-encryption frame, and
+there were no 10-second keep-alives. The 4-digit PIN now uses Chromium's real
+algorithm, verified against an independent vector.
+
+**Second field test (v1.17):** the device was listed again but the transfer still
+failed, and this time the receiver's status line showed that **no TCP session ever
+arrived**. Rather than guess again, v1.17 adds in-app diagnostics: the whole
+protocol core logs every step into a ring buffer shown at
+**Settings > Diagnostics**, with a Copy-log button and a copy written to
+`Download/QuickShare/qs-diagnostics.txt`. The accept loop was also fixed - a
+transient `accept()` failure previously killed the listener for good.
+
+**Third field test (v1.18):** the diagnostics found the bug at once. The receiver
+was double-stripping the 4-byte length prefix from the Ukey2 handshake - the
+socket layer had already removed it - so the handshake died on its first message
+with an `ArrayIndexOutOfBoundsException` reading the message's own opening bytes
+as a length. The unit test had passed *framed* bytes between client and server,
+which is not what a socket does, so it never caught this. Framing is now owned
+solely by the transport layer, and a new `QsIntegrationTest` runs a complete
+session over a real loopback socket (handshake, paired-key exchange,
+introduction, consent, file on disk) so that boundary is tested for real.
+
+**Fourth round (v1.19):** cross-checked against **Bada**, a Kotlin Android Quick
+Share port whose docs record Samsung-specific findings from real devices. It
+documents our exact symptom and its cause: the transport `ConnectionResponseFrame`
+must carry **six** fields, because Samsung One UI validates them unconditionally
+whichever role we play - and **missing `multiplex_socket_bitmask` makes One UI
+8.0.5 silently FIN ~104 ms after our ACCEPT**, while **missing
+`safe_to_disconnect_version` makes One UI 7+ silently drop us before the consent
+dialog opens**. This implementation was sending two of the six. Also adopted from
+Bada: the receiver-first paired-key ordering, the safe-disconnect handshake, the
+`attachment_hash` echo on ACCEPT, and the `IPv4` TXT record with raw-byte mDNS
+attributes set reflectively.
+
+**Fifth round (v1.20):** the log showed the handshake reaching the commitment
+check, with the ClientInit at exactly the right 136 bytes and the ServerInit at
+exactly the right 116 - but the frame read as the ClientFinished at 55 bytes,
+where a valid one must be 78. No decomposition of 55 forms a valid ClientFinished,
+so the receiver was treating the wrong frame as the handshake's third message.
+It now **classifies every handshake frame by its UKEY2 message type** and skips
+anything that is not a ClientFinish (with a test that sends a deliberate stray
+frame to prove it), and the commitment check is advisory rather than fatal.
+
+Also in v1.20: **`QsBrowser`**, an mDNS browse for `_FC9F5ED42C8A._tcp.` that
+decodes the endpoint id and endpoint info so this app can finally *see* stock
+Quick Share devices, not just be seen by them.
+
+**Root cause found (v1.21):** the UKEY2 `Ukey2Message.Type` enum was **wrong by one for
+every value**. `ukey.proto` says `ALERT=1, CLIENT_INIT=2, SERVER_INIT=3, CLIENT_FINISH=4`;
+this code had `CLIENT_INIT=1, SERVER_INIT=2, CLIENT_FINISH=3`. So the ServerInit went out
+tagged 2, the sender read it as a ClientInit, and replied with a `Ukey2Alert` -
+`BAD_MESSAGE_TYPE`, "Expected, but did not find SERVER_INIT" - which is exactly what the
+decoded bytes said. Fixed, quoted from the proto, and pinned by tests that check both the
+constants and the wire bytes.
+
+**v1.22:** the handshake now completes against a real Samsung sender - the log shows
+`commitment verified`, `key exchange complete`, a PIN, both connection responses and
+the switch to the encrypted layer. Two follow-on bugs found in the same log are also
+fixed: **P-256 coordinates must be encoded in the signed form** the peer parses
+(a bare 32-byte magnitude reads as negative when the top bit is set, which caused
+intermittent `BAD_PUBLIC_KEY` alerts), and **bandwidth-upgrade requests are now
+answered** rather than ignored, so the sender does not stall after the encrypted
+channel opens.
+
+**v1.23:** the handshake is confirmed working on hardware (`commitment verified`,
+`key exchange complete`, PIN, both connection responses, encrypted layer). The next
+blocker is visible in the log: the sender closes the connection **~330 ms after the
+encrypted layer without sending anything**, so it is rejecting the receiver's
+paired-key-encryption frame. This build logs **every frame it sends** so the next log
+shows exactly what the peer receives, and fixes the bandwidth-upgrade frame's field
+number (V1Frame field 5, not 2) plus handling of the retry type.
+
+**Not verified:** a completed file transfer with a stock Quick Share device. See
+`QUICKSHARE-INTEROP.md` section 12.
 
 ## 8b. Bug fixed in v1.10: a compile error the build was hiding
 

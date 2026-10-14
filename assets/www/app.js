@@ -1,4 +1,4 @@
-/* Quick Share — UI logic.
+/* PeerZap — UI logic.
    The visual language (One UI-inspired cards, sheets, glow, motion) is the
    original app's; only the content and the features are new. */
 (function () {
@@ -18,11 +18,12 @@
     running: false,
     settings: {
       deviceName: 'This device', visible: true, saveDir: 'QuickShare',
-      notifyIncoming: true, notifyComplete: true, autoAccept: false, version: '1.7'
+      notifyIncoming: true, notifyComplete: true, autoAccept: false,
+      version: '', versionCode: '', pkg: 'com.peerzap'
     }
   };
 
-  var prefs = { theme: 'light', accent: 'blue', glow: true, glass: true };
+  var prefs = { theme: 'light', accent: 'blue', glow: true, glass: true, strictMode: false, icon: 'light', autodl: false, autoinstall: true, qsCompat: false };
 
   /* ---------------------------------------------------------- utilities */
 
@@ -91,17 +92,73 @@
   /* ---------------------------------------------------------- chrome */
 
   var toastT = null;
+  /* Developer mode: seven taps on the build number, as on Android itself. */
+  function devTaps() { try { return parseInt(localStorage.getItem('qs_devtaps') || '0', 10) || 0; } catch (e) { return 0; } }
+  function devMode() { try { return localStorage.getItem('qs_devmode') === '1'; } catch (e) { return false; } }
+  function devTap() {
+    if (devMode()) return;
+    var n = devTaps() + 1;
+    try {
+      if (n >= 7) { localStorage.setItem('qs_devmode', '1'); localStorage.removeItem('qs_devtaps'); }
+      else localStorage.setItem('qs_devtaps', String(n));
+    } catch (e) {}
+    render();
+  }
+
+
+  /* Progress arrives in steps (the bridge is polled), so the number is tweened to the
+     new value instead of snapping to it. The ring's --p is transitioned by CSS. */
+  function setPct(el, to) {
+    if (!el) return;
+    var from = Number(el.getAttribute('data-pct') || '0');
+    to = Number(to) || 0;
+    el.setAttribute('data-pct', String(to));
+    if (from === to || !window.requestAnimationFrame) { el.textContent = to + '%'; return; }
+    var start = null, dur = 900;
+    function step(now) {
+      if (start === null) start = now;
+      var k = Math.min(1, (now - start) / dur);
+      var e = 1 - Math.pow(1 - k, 3);
+      el.textContent = Math.round(from + (to - from) * e) + '%';
+      if (k < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  /* Ask GitHub for the newest release. Natively, because the page is file:// and a
+     cross-origin fetch from that origin is not reliable. */
+  function checkUpdate(byUser) {
+    S.updLatest = 'Checking\u2026';
+    if (byUser) render();
+    try {
+      var r = JSON.parse(QS.checkForUpdate() || '{}');
+      if (!r.ok) { S.updLatest = 'Check failed'; S.updUrl = ''; render(); return; }
+      S.updName = (r.url || '').split('/').pop();
+      if (r.available) {
+        S.updLatest = r.latest;
+        S.updUrl = r.url || '';
+        if (prefs.autodl && QS.downloadAndInstall && S.updDl !== r.latest) {
+          S.updDl = r.latest;
+          if (prefs.autoinstall !== false) QS.downloadAndInstall(r.url, S.updName);
+        }
+      } else {
+        S.updLatest = r.latest ? ('Up to date \u00b7 ' + r.latest) : 'No releases yet';
+        S.updUrl = '';
+      }
+    } catch (e) { S.updLatest = 'Check failed'; S.updUrl = ''; }
+    render();
+  }
+
+  function savePrefs() {
+    try { localStorage.setItem('qs_prefs', JSON.stringify(prefs)); } catch (e) {}
+  }
+
+  function canPopup() { try { return !!(QS && QS.canPopup && QS.canPopup()); } catch (e) { return true; } }
+
   function toast(msg) {
-    var box = $('toasts');
-    var t = document.createElement('div');
-    t.className = 'toast';
-    t.textContent = msg;
-    box.appendChild(t);
-    requestAnimationFrame(function () { t.classList.add('show'); });
-    setTimeout(function () {
-      t.classList.remove('show');
-      setTimeout(function () { try { box.removeChild(t); } catch (e) {} }, 300);
-    }, 2200);
+    // Toasts are hidden by request: the app no longer pops up confirmations for
+    // file selection or anything else. Kept as a function so callers are unchanged.
+    return;
   }
 
   function openSheet(html) {
@@ -118,6 +175,27 @@
     document.body.classList.remove('sheetopen');
   }
 
+  /* ---------------------------------------------------------- back gesture */
+
+  /**
+   * Android's back gesture asks the page first, through MainActivity.onBackPressed.
+   * The page undoes whatever it owns - an open sheet, the Credits tab, a deeper
+   * route - and only when there is genuinely nothing left does it hand control
+   * back to Android, which closes the app.
+   *
+   * Before this existed, back was unhandled: it went straight to finishing the
+   * activity, so backing out of Credits closed the whole app.
+   */
+  window.qsBack = function () {
+    var sh = $('sheet');
+    if (sh && !sh.hidden) { closeSheet(); return; }                 // a sheet is up
+    if (S.route === 'settings' && STAB === 'credits') {             // Credits -> Settings
+      STAB = 'general'; render(); $('scroller').scrollTop = 0; return;
+    }
+    if (S.route !== 'home') { nav('home'); return; }                // any route -> home
+    if (QS && QS.exitApp) QS.exitApp();                             // nothing left: exit
+  };
+
   function applyTheme() {
     document.body.classList.remove('dark', 'pitch');
     if (prefs.theme === 'dark') document.body.classList.add('dark');
@@ -126,13 +204,15 @@
     document.documentElement.setAttribute('data-glow', prefs.glow ? 'on' : 'off');
     document.documentElement.setAttribute('data-glass', prefs.glass === false ? 'off' : 'on');
     try { localStorage.setItem('qs_prefs', JSON.stringify(prefs)); } catch (e) {}
-    // keep the choice natively too, so the Quick Share panel matches exactly
+    // keep the choice natively too, so the PeerZap panel matches exactly
     if (QS && QS.setSetting) {
       try {
         QS.setSetting('theme', prefs.theme);
         QS.setSetting('accent', prefs.accent || 'blue');
         QS.setSetting('glow', String(!!prefs.glow));
         QS.setSetting('glass', String(prefs.glass !== false));
+        QS.setSetting('qsCompat', String(!!prefs.qsCompat));
+        QS.setSetting('strictMode', String(!!prefs.strictMode));
       } catch (e) {}
     }
     if (QS && QS.theme) {
@@ -144,7 +224,7 @@
   /* ---------------------------------------------------------- router */
 
   var TITLES = {
-    home: ['Quick Share', 'Send and receive files nearby'],
+    home: ['PeerZap', 'Direct. Fast. Effortless.'],
     devices: ['Nearby devices', 'Devices on your Wi-Fi network'],
     transfers: ['Transfers', 'Active and completed transfers'],
     files: ['Files', 'Everything on this device'],
@@ -187,8 +267,17 @@
     else if (window.QSFiles && QSFiles.isFilesRoute(S.route)) html = QSFiles.view(S.route);
     else html = viewHome();
     v.innerHTML = html;
-    // navigation is instant: no whole-page entrance animation (it read as a
-    // refresh). Motion lives in the controls, sheets and progress instead.
+    // A route change gets a whisper of a fade - it reads as a transition rather than
+    // a refresh, because it is 400ms on transform+opacity only. Re-renders of the
+    // same route do not animate at all.
+    try {
+      if (render._lastRoute !== S.route) {
+        render._lastRoute = S.route;
+        v.classList.remove('viewswap');
+        void v.offsetWidth;              // restart the animation
+        v.classList.add('viewswap');
+      }
+    } catch (e) {}
     if (window.QSFiles && QSFiles.isFilesRoute(S.route)) {
       var fs = $('fsearch');
       if (fs) fs.addEventListener('input', function () { QSFiles.filter(this.value); });
@@ -252,7 +341,7 @@
     h += '<div class="sect">Nearby devices</div>';
     h += S.devices.length
       ? '<div class="card list">' + S.devices.slice(0, 4).map(deviceRow).join('') + '</div>'
-      : '<div class="card"><div class="empty">No devices yet.<br>Open Quick Share on the other device and keep both phones on the same Wi-Fi network.</div></div>';
+      : '<div class="card"><div class="empty">No devices yet.<br>Open PeerZap on the other device and keep both phones on the same Wi-Fi network.</div></div>';
 
     var recent = S.history.slice(0, 4);
     if (recent.length) {
@@ -268,7 +357,7 @@
       '<span class="ntbar-acts"><button class="btn ghost sm" data-act="scan">Refresh</button></span></div>';
     h += S.devices.length
       ? '<div class="card list">' + S.devices.map(deviceRow).join('') + '</div>'
-      : '<div class="card"><div class="empty">No devices found yet.<br><br>Both devices must be on the same Wi-Fi network and have Quick Share open.</div></div>';
+      : '<div class="card"><div class="empty">No devices found yet.<br><br>Both devices must be on the same Wi-Fi network and have PeerZap open.</div></div>';
     h += '<div class="card"><div class="setrow"><div class="lmain"><div class="ltitle">Not seeing the other device?</div>' +
       '<div class="lsub" style="white-space:normal">Check that both phones are on the same Wi-Fi (not one on mobile data), and that "Visible to nearby devices" is on.</div></div></div></div>';
     return h;
@@ -295,9 +384,93 @@
     return h;
   }
 
+  function qsLogText() {
+    try {
+      var t = QS.qsCompatLog();
+      return (t && t.trim()) ? t : '(nothing yet)';
+    } catch (e) { return '(log unavailable)'; }
+  }
+
+  function qsCompatStatusText() {
+    if (!prefs.qsCompat) return 'Off';
+    try {
+      var st = JSON.parse(QS.qsCompatStatus());
+      var base = st.running ? ('Listening on port ' + st.port) : 'Not listening yet';
+      return base + (st.status ? ' - ' + st.status : '');
+    } catch (e) { return 'Starting...'; }
+  }
+
+  var STAB = 'general';
+
+  var BRAND = {
+    telegram: '<svg viewBox="0 0 24 24" fill="#229ED9" width="20" height="20"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>',
+    github: '<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>'
+  };
+
+
+  /* Cloned from Gitly's Credits tab: an app card, a developer card, connect
+     buttons and a languages row - with our own content. */
+  function viewCredits() {
+    var st = S.settings;
+    var version = (st.version || 'unknown') + (st.versionCode ? ' (build ' + st.versionCode + ')' : '');
+    var langs = [
+      ['Java', 'The whole Android side - discovery, the Quick Share protocol, the receivers and services.'],
+      ['JavaScript', 'The interface you see. It runs in a WebView and talks to Java through a small bridge.'],
+      ['HTML', 'The structure of the app and the share panel.'],
+      ['CSS', 'All of the styling, themes, accents and animation.'],
+      ['XML', 'Android resources - the manifest, layouts, styles and icons.']
+    ];
+    var h = '';
+    h += '<div class="card" style="text-align:center;padding:26px 20px">' +
+      '<div style="font-size:32px;font-weight:800;letter-spacing:-0.5px">PeerZap</div>' +
+      '<ul class="creditslist" style="list-style:none;text-align:left;margin:16px auto 0;padding:0;max-width:300px">' +
+      '<li class="lsub" style="padding:7px 0 7px 18px;border-bottom:1px solid var(--divider);white-space:normal">Version ' + esc(version) + '</li>' +
+      '<li class="lsub" style="padding:7px 0 7px 18px;border-bottom:1px solid var(--divider);white-space:normal">Version name is the release; the build number goes up with every build.</li>' +
+      '<li class="lsub" style="padding:7px 0 7px 18px;border-bottom:1px solid var(--divider);white-space:normal">Transfers directly between nearby devices</li>' +
+      '<li class="lsub" style="padding:7px 0 7px 18px;border-bottom:1px solid var(--divider);white-space:normal">Not affiliated with Google or Samsung</li>' +
+      '<li class="lsub" style="padding:7px 0 7px 18px">Quick Share compatibility is an independent reimplementation</li></ul></div>';
+
+    h += '<div class="sect">Developer</div>';
+    h += '<div class="card" style="text-align:center">' +
+      '<img src="dev.jpg" alt="BonkerUnkil (Bonki)" style="width:96px;height:96px;border-radius:32px;margin:0 auto 16px;box-shadow:0 8px 28px var(--glow)">' +
+      '<div style="padding:8px 0;border-bottom:1px solid var(--divider)"><div class="ltitle">Name</div>' +
+      '<div class="lsub" style="margin-top:2px">BonkerUnkil (Bonki)</div></div>' +
+      '<div style="padding:8px 0;border-bottom:1px solid var(--divider)"><div class="ltitle">Age</div>' +
+      '<div class="lsub" style="margin-top:2px">20</div></div>' +
+      '<div style="padding:8px 0"><div class="ltitle">Profession</div>' +
+      '<div class="lsub" style="margin-top:2px">AI Prompt Engineering, UI/UX Designer, Coding</div></div></div>' +
+      '<div class="sect">Connect</div>' +
+      '<div class="card">' +
+      '<button class="btn ghost btnblock" data-act="ext" data-url="https://t.me/BonkerUnkilBonki" style="display:flex;align-items:center;justify-content:flex-start;gap:12px">' +
+      BRAND.telegram + '<span>Telegram · @BonkerUnkilBonki</span></button>' +
+      '<button class="btn ghost btnblock" data-act="ext" data-url="https://github.com/BonkerUnkilBonki" style="display:flex;align-items:center;justify-content:flex-start;gap:12px;margin-top:8px">' +
+      BRAND.github + '<span>GitHub · @BonkerUnkilBonki</span></button></div>';
+
+    h += '<div class="sect">Languages used</div>';
+    h += '<div class="card">' + langs.map(function (l) {
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--divider)">' +
+        '<div class="ltitle">' + esc(l[0]) + '</div>' +
+        '<div class="lsub" style="white-space:normal;margin-top:3px">' + esc(l[1]) + '</div></div>';
+    }).join('') + '<div class="chips" style="margin-top:12px">' +
+      langs.map(function (l) { return '<span class="chip">' + esc(l[0]) + '</span>'; }).join('') +
+      '</div></div>';
+
+    h += '<div class="sect">Compatibility</div>';
+    h += '<div class="card">' +
+      '<div style="padding:10px 0;border-bottom:1px solid var(--divider)"><div class="ltitle">Google PeerZap</div>' +
+      '<div class="lsub" style="white-space:normal;margin-top:3px">Receiving from the stock app over the local network, and sending to it, by reimplementing the nearby protocol.</div></div>' +
+      '<div style="padding:10px 0"><div class="ltitle">This app to this app</div>' +
+      '<div class="lsub" style="white-space:normal;margin-top:3px">Over Wi-Fi, Wi-Fi Direct when there is no shared network, or Bluetooth when there is no network at all.</div></div></div>';
+    return h;
+  }
+
   function viewSettings() {
     var st = S.settings;
     var h = '';
+    h += '<div class="seg" style="margin:0 0 14px">' +
+      segBtn('stab', 'general', 'Settings', STAB) +
+      segBtn('stab', 'credits', 'Credits', STAB) + '</div>';
+    if (STAB === 'credits') return h + viewCredits();
     h += '<div class="sect">Device</div>';
     h += '<div class="card">' +
       '<label class="fldlabel" for="setName">Device name</label>' +
@@ -324,10 +497,65 @@
 
     h += '<div class="sect">Background</div>';
     h += '<div class="card">' +
-      '<div class="setrow"><div class="lmain"><div class="ltitle">Quick Share only runs while it is open</div>' +
-      '<div class="lsub" style="white-space:normal">There is no background service. Closing the panel - or leaving this screen - shuts Quick Share down. The one exception is a transfer that is still running: it is kept alive just long enough to finish (with its live progress notification), and then Quick Share stops itself.</div></div>' +
+      '<div class="setrow"><div class="lmain"><div class="ltitle">PeerZap only runs while it is open</div>' +
+      '<div class="lsub" style="white-space:normal">There is no background service. Closing the panel - or leaving this screen - shuts PeerZap down. The one exception is a transfer that is still running: it is kept alive just long enough to finish (with its live progress notification), and then PeerZap stops itself.</div></div>' +
       '</div>' +
       '</div>';
+
+    h += '<div class="sect">Background</div>';
+    h += '<div class="card">' +
+      '<div class="setrow"><div class="lmain"><div class="ltitle">Strict mode</div>' +
+      '<div class="lsub" style="white-space:normal">Nothing runs in the background. The listener stops the moment you leave the app or the panel, so a transfer can only arrive while PeerZap is open. Saves battery, but a share sent while the app is closed will not reach you.</div></div>' +
+      '<div class="switch' + (prefs.strictMode ? ' on' : '') + '" data-act="strictmode"></div></div>' +
+      (canPopup() ? '' :
+        '<div class="setrow" style="margin-top:16px"><div class="lmain"><div class="ltitle">Show the panel when a file arrives</div>' +
+        '<div class="lsub" style="white-space:normal">Needs "Display over other apps". Without it the incoming notification is the only prompt.</div></div>' +
+        '<button class="btn ghost" data-act="overlay">Allow</button></div>') +
+      '</div>';
+
+    h += '<div class="sect">App updates</div>';
+    h += '<div class="card">' +
+      '<div class="setrow"><div class="lmain"><div class="ltitle">Auto-download app updates</div>' +
+      '<div class="lsub" style="white-space:normal">When a new PeerZap release is published on GitHub, the update APK is downloaded to your Downloads folder automatically.</div></div>' +
+      '<div class="switch' + (prefs.autodl ? ' on' : '') + '" data-act="autodl"></div></div>' +
+      '<div class="setrow" style="margin-top:16px;border-top:1px solid var(--divider);padding-top:14px"><div class="lmain"><div class="ltitle">Install updates automatically</div>' +
+      '<div class="lsub" style="white-space:normal">Opens the Android installer as soon as the update finishes downloading, so the update actually lands. Android asks once to allow PeerZap to install unknown apps. Turn this off to download only.</div></div>' +
+      '<div class="switch' + (prefs.autoinstall !== false ? ' on' : '') + '" data-act="autoinstall"></div></div>' +
+      '<div style="display:flex;gap:10px;align-items:center;padding:12px 0 2px;margin-top:12px;border-top:1px solid var(--divider)">' +
+      '<div class="lmain" style="flex:1"><div class="ltitle">Installed</div><div class="lsub">Version ' + esc(st.version || '') + '</div></div>' +
+      '<div class="lmain" style="flex:1;text-align:right"><div class="ltitle" id="updLatest">' + esc(S.updLatest || 'Not checked') + '</div><div class="lsub">latest on GitHub</div></div></div>' +
+      '<button class="btn ghost btnblock" style="margin-top:12px" data-act="checkupd">Check for updates</button>' +
+      (S.updUrl ? '<button class="btn primary btnblock" style="margin-top:8px" data-act="doinstall">Download and install</button>' : '') +
+      '</div>';
+
+    h += '<div class="sect">Google PeerZap</div>';
+    h += '<div class="card">' +
+      '<div class="setrow"><div class="lmain"><div class="ltitle">Quick Share compatibility</div>' +
+      '<div class="lsub" style="white-space:normal">Experimental. Makes this device visible to stock Google Quick Share on the same Wi-Fi network and receives files from it. Wi-Fi LAN only - both devices must be on the same network, with client isolation off.</div></div>' +
+      '<div class="switch' + (prefs.qsCompat ? ' on' : '') + '" data-act="qscompat"></div></div>' +
+      '<div class="setrow" style="margin-top:14px"><div class="lmain"><div class="ltitle">Status</div>' +
+      '<div class="lsub" style="white-space:normal">' + esc(qsCompatStatusText()) + '</div></div></div>' +
+      '</div>';
+
+    if (devMode()) h += '<div class="sect">Diagnostics</div>';
+    if (devMode()) h += '<div class="card">' +
+      '<div class="setrow"><div class="lmain"><div class="ltitle">Protocol log</div>' +
+      '<div class="lsub" style="white-space:normal">Everything the receiver did on the last connections, newest last. If a transfer fails, copy this and send it on.</div></div></div>' +
+      '<pre class="qslog" id="qslogbox">' + esc(qsLogText()) + '</pre>' +
+      '<div class="btnrow" style="margin-top:12px">' +
+      '<button class="btn" data-act="qslogcopy">Copy log</button>' +
+      '<button class="btn" data-act="qslogclear">Clear</button>' +
+      '</div></div>';
+
+    h += '<div class="sect">App icon</div>';
+    h += '<div class="card">' +
+      '<div class="lsub" style="white-space:normal;margin-bottom:12px">Pick the launcher icon. Android may take a moment to refresh the home screen.</div>' +
+      '<div class="iconrow">' +
+      [['light', 'Light'], ['light_ios', 'Light (iOS)'], ['dark', 'Dark'], ['dark_ios', 'Dark (iOS)']].map(function (o) {
+        return '<button class="iconpick' + (prefs.icon === o[0] ? ' on' : '') + '" data-act="icon" data-v="' + o[0] + '">' +
+          '<img src="ic_' + o[0] + '.png" alt="' + esc(o[1]) + '">' +
+          '<span class="lsub" style="white-space:normal">' + esc(o[1]) + '</span></button>';
+      }).join('') + '</div></div>';
 
     h += '<div class="sect">Appearance</div>';
     h += '<div class="card">' +
@@ -349,8 +577,15 @@
 
     h += '<div class="sect">About</div>';
     h += '<div class="card">' +
-      '<div class="setrow"><div class="lmain"><div class="ltitle">Quick Share v' + esc(st.version) + '</div>' +
+      '<div class="setrow"><div class="lmain"><div class="ltitle">PeerZap</div>' +
       '<div class="lsub">A standalone nearby file-sharing client</div></div></div>' +
+      '<div class="setrow" data-act="devtap" style="margin-top:14px"><div class="lmain"><div class="ltitle">App version</div>' +
+      '<div class="lsub">' + esc(st.version || 'unknown') +
+      (st.versionCode ? ' (build ' + esc(st.versionCode) + ')' : '') +
+      (devMode() ? '' : (devTaps() > 0 ? ' \u00b7 ' + (7 - devTaps()) + ' more taps' : '')) +
+      '</div></div></div>' +
+      '<div class="setrow" style="margin-top:14px"><div class="lmain"><div class="ltitle">Package</div>' +
+      '<div class="lsub">' + esc(st.pkg || 'com.peerzap') + '</div></div></div>' +
       '<div class="lrow" data-act="about" style="padding:14px 0"><div class="lmain"><div class="ltitle">How transfers work</div>' +
       '<div class="lsub">Protocol, limits and compatibility</div></div>' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;color:var(--text2)"><polyline points="9 18 15 12 9 6"/></svg></div>' +
@@ -374,7 +609,7 @@
     return '<div class="lrow" data-act="' + (hasFiles ? 'send' : 'nodev') + '" data-id="' + esc(d.id) + '">' +
       '<span class="devav">' + svg('device') + '</span>' +
       '<div class="lmain"><div class="ltitle">' + esc(d.name || 'Device') + '</div>' +
-      '<div class="lsub">' + esc(d.ip || '') + (d.model ? ' · ' + esc(d.model) : '') + '</div></div>' +
+      '<div class="lsub">' + esc(d.ip || '') + (d.direct ? ' · Direct link' : '') + (d.model && !d.direct ? ' · ' + esc(d.model) : '') + (d.stock ? ' · Quick Share' : '') + '</div></div>' +
       '<span class="chip ' + (hasFiles ? '' : '') + '" style="' + (hasFiles ? '' : 'opacity:.6') + '">' + (hasFiles ? 'Send' : 'Select files') + '</span>' +
       '</div>';
   }
@@ -397,11 +632,14 @@
   function incomingCard(inc) {
     var names = (inc.files || []).map(function (n) { return '<div class="lsub" style="white-space:normal">' + esc(n) + '</div>'; }).join('');
     return '<div class="card" style="border:1px solid var(--accent)">' +
-      '<div class="ltitle">Incoming from ' + esc(inc.peer || 'Device') + '</div>' +
-      '<div class="lsub">' + (inc.count || 0) + ' file(s) · ' + fmtSize(inc.size || 0) + '</div>' +
+      (inc.pin && !inc.auto ? '<div class="pinbig">PIN ' + esc(inc.pin) + '</div>' : '') +
+      '<div class="lsub" style="text-align:center">' + (inc.count || 0) + ' file(s)</div>' +
+      (inc.pin ? '<div class="lsub" style="white-space:normal;font-weight:600">PIN ' + esc(inc.pin) + ' · check it matches the sender, then Accept</div>' : '') +
       '<div style="margin-top:6px">' + names + '</div>' +
-      '<div class="btnrow"><button class="btn danger" data-act="reject" data-id="' + esc(inc.id) + '">Decline</button>' +
-      '<button class="btn primary" data-act="accept" data-id="' + esc(inc.id) + '">Accept</button></div>' +
+      (inc.auto
+        ? '<div class="btnrow"><span class="chip">Receiving…</span></div>'
+        : '<div class="btnrow"><button class="btn danger" data-act="reject" data-id="' + esc(inc.id) + '">Decline</button>' +
+          '<button class="btn primary" data-act="accept" data-id="' + esc(inc.id) + '">Accept</button></div>') +
       '</div>';
   }
 
@@ -446,13 +684,49 @@
     switch (act) {
       case 'pick': if (QS) QS.pickFiles(); break;
       case 'clearPending': if (QS) QS.clearPending(); S.pending = []; render(); break;
-      case 'send':
+      case 'send': {
         if (!S.pending.length) { toast('Choose files first'); nav('home'); break; }
-        if (QS) { var tid = QS.sendTo(id); if (tid) { toast('Sending…'); nav('transfers'); } }
+        var dev = null;
+        for (var i = 0; i < (S.devices || []).length; i++) {
+          if (S.devices[i].id === id) { dev = S.devices[i]; break; }
+        }
+        // Real stock Quick Share peers are flagged by the bridge and their ids are
+        // prefixed "qs:". Fall back to the prefix so a missing flag can never
+        // route a stock device down the app's own protocol, which fails silently.
+        var isStock = dev && (dev.stock === true || String(dev.id || '').indexOf('qs:') === 0);
+        if (isStock) {
+          var r = QS.qsSendTo(id);
+          if (r === 'started') { toast('Sending to ' + (dev.name || 'device') + '…'); nav('transfers'); }
+          else if (r === 'no-files') toast('Choose files first');
+          else if (r === 'not-found') toast('That device is no longer nearby');
+          else if (r === 'no-address') toast('Could not reach that device');
+          else toast('Could not send (' + r + ')');
+          break;
+        }
+        if (String(id || '').indexOf('p2p:') === 0) {
+          var dr = QS.qsDirectSend(id);
+          if (dr === 'linking') { toast('Linking directly…'); nav('transfers'); }
+          else if (dr === 'no-files') toast('Choose files first');
+          else if (dr === 'not-found') toast('That device is no longer nearby');
+          else toast('Could not link (' + dr + ')');
+          break;
+        }
+        if (QS) {
+          var tid = QS.sendTo(id);
+          if (tid) { toast('Sending…'); nav('transfers'); }
+          else toast('That device is not available for a direct send');
+        }
         break;
+      }
       case 'nodev': toast('Choose files first, then tap a device'); break;
-      case 'accept': if (QS) QS.accept(id); break;
-      case 'reject': if (QS) QS.reject(id); break;
+      case 'accept':
+        if (id === 'qsconsent') { if (QS) QS.qsConsentAccept(); }
+        else if (QS) QS.accept(id);
+        break;
+      case 'reject':
+        if (id === 'qsconsent') { if (QS) QS.qsConsentReject(); }
+        else if (QS) QS.reject(id);
+        break;
       case 'cancel': if (QS) QS.cancel(id); break;
       case 'scan': toast('Scanning…'); if (QS) QS.startDiscovery(); break;
       case 'clearHistory':
@@ -466,6 +740,7 @@
       case 'removeHistory': if (QS) QS.removeHistory(id); S.history = S.history.filter(function (x) { return x.id !== id; }); closeSheet(); render(); break;
       case 'open': if (QS) QS.openFile(el.getAttribute('data-ref')); break;
       case 'closesheet': closeSheet(); break;
+      case 'openfile': if (QS && QS.openHistoryFile) QS.openHistoryFile(id); break;
       case 'saveName':
         var n = ($('setName') && $('setName').value || '').trim() || 'This device';
         S.settings.deviceName = n; if (QS) QS.setSetting('deviceName', n); toast('Device name saved'); render(); break;
@@ -480,6 +755,30 @@
       case 'accent': prefs.accent = v; applyTheme(); render(); break;
       case 'glow': prefs.glow = !prefs.glow; applyTheme(); render(); break;
       case 'glass': prefs.glass = !(prefs.glass !== false); applyTheme(); render(); break;
+      case 'strictmode':
+        prefs.strictMode = !prefs.strictMode;
+        if (QS) QS.setSetting('strictMode', String(prefs.strictMode));
+        render(); break;
+      case 'overlay': if (QS) QS.openOverlaySettings(); break;
+      case 'qscompat':
+        prefs.qsCompat = !prefs.qsCompat;
+        // Stock Quick Share sends without our consent prompt, so compatibility only
+        // works if we accept. Turning it on turns auto-accept on with it.
+        if (prefs.qsCompat && !S.settings.autoAccept) {
+          S.settings.autoAccept = true;
+          if (QS) QS.setSetting('autoAccept', 'true');
+        }
+        applyTheme(); render(); break;
+      case 'devtap': devTap(); break;
+      case 'stab': STAB = v; render(); break;
+      case 'ext': if (QS && QS.openUrl) QS.openUrl(el.getAttribute('data-url')); break;
+      case 'icon': prefs.icon = v; if (QS && QS.setIcon) QS.setIcon(v); savePrefs(); render(); break;
+      case 'autodl': prefs.autodl = !prefs.autodl; savePrefs(); render(); break;
+      case 'autoinstall': prefs.autoinstall = prefs.autoinstall === false; savePrefs(); render(); break;
+      case 'checkupd': checkUpdate(true); break;
+      case 'doinstall': if (QS && QS.downloadAndInstall && S.updUrl) QS.downloadAndInstall(S.updUrl, S.updName || 'QuickShare-update.apk'); break;
+      case 'qslogcopy': try { QS.copy(qsLogText()); } catch (e) {} break;
+      case 'qslogclear': try { QS.qsCompatLogClear(); } catch (e) {} render(); break;
       case 'about': showAbout(); break;
       default:
         // the built-in file manager handles its own actions
@@ -495,6 +794,13 @@
     var openBtns = saved.map(function (p, i) {
       return '<button class="btn ghost btnblock" style="margin-top:8px" data-act="open" data-ref="' + esc(p) + '">Open ' + esc((e.files || [])[i] || ('file ' + (i + 1))) + '</button>';
     }).join('');
+    // PeerZap entries store no uri - their files sit in Downloads/QuickShare, so
+    // they are looked up by name instead
+    if (!saved.length && (e.files || []).length) {
+      openBtns = (e.files || []).slice(0, 6).map(function (n) {
+        return '<button class="btn ghost btnblock" style="margin-top:8px" data-act="openfile" data-id="' + esc(e.id) + '">Open ' + esc(n) + '</button>';
+      }).join('');
+    }
     openSheet(
       '<div class="sheethead"><b>' + (e.dir === 'recv' ? 'Received' : 'Sent') + ' · ' + esc(e.peer || '') + '</b>' +
       '<button class="iconbtn" data-act="closesheet">✕</button></div>' +
@@ -512,9 +818,9 @@
     openSheet(
       '<div class="sheethead"><b>How transfers work</b><button class="iconbtn" data-act="closesheet">✕</button></div>' +
       '<div class="md" style="font-size:14px">' +
-      '<p>Quick Share finds other phones on the same Wi-Fi network and moves files directly between them - nothing goes through a server or the internet.</p>' +
+      '<p>PeerZap finds other phones on the same Wi-Fi network and moves files directly between them - nothing goes through a server or the internet.</p>' +
       '<p><b>Discovery</b> uses a small broadcast beacon on the local network (UDP port 8890). <b>Transfers</b> use a direct connection (TCP port 8891): the sender offers the files, the receiver accepts, and the files stream across.</p>' +
-      '<p><b>Compatibility.</b> This app talks to other copies of this app. It is a standalone client and does <b>not</b> use Google\'s proprietary Quick Share protocol, so it cannot send to or receive from Google Quick Share or Windows Quick Share.</p>' +
+      '<p><b>Compatibility.</b> PeerZap talks to other copies of PeerZap over its own protocol. It can also <b>receive</b> from stock Google Quick Share on the same Wi-Fi network, once <i>Quick Share compatibility</i> is turned on in Settings - this is confirmed working on real hardware. Sending <i>to</i> Google Quick Share is implemented but has not yet been confirmed on hardware, and Windows Quick Share is not supported.</p>' +
       '<p><b>Privacy.</b> Files travel only over your local network. Nothing is uploaded anywhere. Received files are saved to your Downloads folder.</p>' +
       '</div>');
   }
@@ -555,6 +861,7 @@
       S.pending = (st.pending && st.pending.length) ? st.pending : S.pending;
       S.localIp = st.localIp || '';
       S.running = !!st.running;
+      if (!S.updChecked) { S.updChecked = true; setTimeout(function () { try { checkUpdate(false); } catch (e) {} }, 600); }
       if (st.settings) S.settings = Object.assign(S.settings, st.settings);
       // incoming list: keep only ones still pending
       var inc = st.incoming || [];
@@ -575,11 +882,15 @@
       prefs.accent = p.accent || 'blue';
       prefs.glow = (typeof p.glow === 'boolean') ? p.glow : true;
       prefs.glass = (typeof p.glass === 'boolean') ? p.glass : true;
+      prefs.qsCompat = !!p.qsCompat;
     } else {
       if (s.theme) prefs.theme = s.theme;
       if (s.accent) prefs.accent = s.accent;
       if (typeof s.glow === 'boolean') prefs.glow = s.glow;
       if (typeof s.glass === 'boolean') prefs.glass = s.glass;
+      if (typeof s.qsCompat === 'boolean') prefs.qsCompat = s.qsCompat;
+      if (typeof s.strictMode === 'boolean') prefs.strictMode = s.strictMode;
+      if (typeof s.iconStyle === 'string') prefs.icon = s.iconStyle;
     }
     applyTheme();
 

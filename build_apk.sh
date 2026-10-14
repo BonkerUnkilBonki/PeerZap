@@ -7,7 +7,7 @@ ulimit -v unlimited 2>/dev/null || true
 
 P="$(cd "$1" && pwd)"
 OUT="$2"
-BT=/scratch/work/sdk/bt36/36.0.0
+BT=/scratch/work/sdk/build-tools/34.0.0
 AJ=/scratch/work/sdk/platforms/android-36/android.jar
 B="$P/build"
 

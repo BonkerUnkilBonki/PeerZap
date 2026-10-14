@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The panel slides up and fades in, so it arrives rather than appearing. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+     android:interpolator="@android:interpolator/decelerate_cubic">
+    <translate
+        android:fromYDelta="14%p"
+        android:toYDelta="0"
+        android:duration="280" />
+    <alpha
+        android:fromAlpha="0"
+        android:toAlpha="1"
+        android:duration="200" />
+</set>

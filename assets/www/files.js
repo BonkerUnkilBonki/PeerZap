@@ -109,7 +109,7 @@
     if (F.allowed) return '';
     return '<div class="card" style="border:1px solid var(--accent)">' +
       '<div class="ltitle">Allow access to all files</div>' +
-      '<div class="lsub" style="white-space:normal;margin-top:6px">To browse everything on this device — images, documents, audio, APKs, archives and folders — Quick Share needs the “All files access” permission. Nothing is uploaded anywhere; the files stay on your device.</div>' +
+      '<div class="lsub" style="white-space:normal;margin-top:6px">To browse everything on this device — images, documents, audio, APKs, archives and folders — PeerZap needs the “All files access” permission. Nothing is uploaded anywhere; the files stay on your device.</div>' +
       '<div class="btnrow"><button class="btn primary" data-act="allow">Open permission</button></div>' +
       '</div>';
   }
@@ -129,7 +129,7 @@
     h += '</div>';
     h += '<div class="sect">Storage</div>';
     h += '<div class="card list" id="roots"><div class="empty">Loading…</div></div>';
-    h += '<p class="tiny" style="text-align:left">Apps, Contacts and Folder open their own views. Tapping any file lets you open, share or send it with Quick Share.</p>';
+    h += '<p class="tiny" style="text-align:left">Apps, Contacts and Folder open their own views. Tapping any file lets you open, share or send it with PeerZap.</p>';
     return h;
   }
 
@@ -139,7 +139,7 @@
     if (cat === 'contacts' && !F.contactsAllowed) {
       h += '<div class="card" style="border:1px solid var(--accent)">' +
         '<div class="ltitle">Allow access to contacts</div>' +
-        '<div class="lsub" style="white-space:normal;margin-top:6px">To show your contacts here, Quick Share needs the Contacts permission.</div>' +
+        '<div class="lsub" style="white-space:normal;margin-top:6px">To show your contacts here, PeerZap needs the Contacts permission.</div>' +
         '<div class="btnrow"><button class="btn primary" data-act="allowcontacts">Allow contacts</button></div></div>';
     }
     h += '<div class="searchbar" style="margin-top:2px">' +
@@ -354,7 +354,7 @@
       case 'sharefile': var fs = byUid(el.getAttribute('data-i')); if (fs && QS) QS.shareRef(refOf(fs), fs.mime, fs.name); break;
       case 'sendfile':
         var fd = byUid(el.getAttribute('data-i'));
-        if (fd && QS) { QS.sendRef(refOf(fd), fd.mime, fd.name); toast('Added to Quick Share'); if (window.qsNav) window.qsNav('devices'); }
+        if (fd && QS) { QS.sendRef(refOf(fd), fd.mime, fd.name); toast('Added to PeerZap'); if (window.qsNav) window.qsNav('devices'); }
         break;
       case 'appsheet': appSheet(pkg, el.getAttribute('data-name')); break;
       case 'openapp': if (QS) QS.openApp(pkg); break;
@@ -377,7 +377,7 @@
     if (!isDir) {
       rows = '<div class="btncol">' +
         '<button class="btn primary btnblock" data-act="openfile" data-i="' + esc(uidOf(e)) + '">Open</button>' +
-        '<button class="btn ghost btnblock" data-act="sendfile" data-i="' + esc(uidOf(e)) + '">Send with Quick Share</button>' +
+        '<button class="btn ghost btnblock" data-act="sendfile" data-i="' + esc(uidOf(e)) + '">Send with PeerZap</button>' +
         '<button class="btn ghost btnblock" data-act="sharefile" data-i="' + esc(uidOf(e)) + '">Share with another app</button>' +
         '</div>';
     } else {

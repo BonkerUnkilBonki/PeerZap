@@ -19,7 +19,7 @@
 .heatcell.l3{background:var(--accent);opacity:.8}
 .heatcell.l4{background:var(--accent);opacity:1}
 .creditslist li{position:relative}
-.creditslist li::before{content:'';position:absolute;left:2px;top:13px;width:7px;height:7px;border-radius:4px;background:var(--accent)}
+.creditslist li::before{content:'';position:absolute;left:2px;top:17px;width:7px;height:7px;border-radius:4px;background:var(--accent)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 @font-face{font-family:'OneGitSans';src:url('fonts/OneGitSans.ttf') format('truetype');font-weight:100 900;font-style:normal;font-display:swap}
 [hidden]{display:none!important}
@@ -912,13 +912,13 @@ body.dark .pwrap,body.pitch .pwrap{border:1px solid var(--divider);border-bottom
 .ptitle{font-size:20px;font-weight:700;letter-spacing:-.3px}
 .psub{font-size:12.5px;color:var(--text2);margin-top:2px}
 .pseg{margin:0 0 14px}
-.pact{display:flex;gap:10px;margin-top:12px}
+.pact{display:flex;gap:10px;margin-top:9px}
 .pact .btn{flex:1}
-.pdev{display:flex;align-items:center;gap:13px;padding:12px 4px;border-bottom:1px solid var(--divider);cursor:pointer;transition:background .15s}
+.pdev{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid var(--divider);cursor:pointer;transition:background .15s}
 .pdev:last-child{border-bottom:none}
 .pdev:active{background:var(--chip)}
 .pdev .devav{width:42px;height:42px}
-.pempty{text-align:center;color:var(--text2);font-size:13.5px;line-height:1.6;padding:22px 10px}
+.pempty{text-align:center;color:var(--text2);font-size:13.5px;line-height:1.55;padding:14px 10px}
 .pfoot{display:flex;gap:10px;margin-top:16px}
 .pfoot .btn{flex:1}
 .pbadge{display:inline-flex;align-items:center;gap:7px;background:var(--chip);border-radius:14px;padding:7px 12px;font-size:12.5px;font-weight:600;color:var(--text2)}
@@ -981,8 +981,8 @@ html[data-glow="off"] .shero::after { display: none; }
 html[data-glow="off"] .pulse { box-shadow: none; }
 
 /* ---------- smoother motion throughout ---------- */
-.ring { transition: --p .55s cubic-bezier(.22,.75,.25,1); }
-.upbar i { transition: width .55s cubic-bezier(.22,.75,.25,1); }
+.ring { transition: --p .8s cubic-bezier(.22,.68,.16,1); }
+.upbar i { transition: width .8s cubic-bezier(.22,.68,.16,1); }
 .ring b { transition: color .3s; }
 
 #scroller { scroll-behavior: smooth; }
@@ -1133,7 +1133,7 @@ body.pitch .sheetcard::before, body.pitch .pwrap::before {
 
 /* the panel body keeps a steady height and cross-fades, so switching
    Send / Receive does not make the sheet jump */
-#pbody { min-height: 190px; }
+#pbody { min-height: 0; }
 #pbody.fade { animation: pbodyIn .26s cubic-bezier(.22,.75,.25,1) both; }
 @keyframes pbodyIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
 #pseg { margin-bottom: 10px; }
@@ -1256,3 +1256,172 @@ body.entering .card.list .lrow { animation: none !important; }
 .pkrow, .pdev, .ptprog { animation: none !important; }
 /* a re-loading list keeps its content and eases down instead of blanking */
 .busy { opacity: .45; transition: opacity .18s ease; pointer-events: none; }
+
+/* Quick Share protocol log (Settings > Diagnostics) */
+.qslog {
+  margin: 12px 0 0;
+  padding: 12px 13px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .34);
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #c7c7cf;
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-overflow-scrolling: touch;
+}
+body.light .qslog { background: rgba(0, 0, 0, .06); color: #44444c; }
+
+/* ---------- light mode: the hero follows the theme ----------
+   The share hero is a black card in dark and pitch, which reads well there. In light
+   mode it was black too, because the rule above sets it unconditionally - so the top
+   card sat dark against a light page. Light is the theme with no class on <body>
+   (dark and pitch are added as classes), so this targets exactly that case. */
+body:not(.dark):not(.pitch) .shero,
+body:not(.dark):not(.pitch) .dlhero.shero {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(0, 0, 0, .08);
+}
+body:not(.dark):not(.pitch) .shero .ltitle,
+body:not(.dark):not(.pitch) .shero .lsub { color: #16171A; }
+body:not(.dark):not(.pitch) .shero .lsub { opacity: .70; }
+body:not(.dark):not(.pitch) .shero .chip { background: rgba(0, 0, 0, .06); color: #44444C; }
+body:not(.dark):not(.pitch) .shero .btn.ghost { background: rgba(0, 0, 0, .06); color: #16171A; }
+body:not(.dark):not(.pitch) .shero .btn.ghost:active { background: rgba(0, 0, 0, .12); }
+/* the drifting accent sheen is far too strong on white */
+body:not(.dark):not(.pitch) .shero::after { opacity: .18; }
+
+/* ---------- the PIN on an incoming request: centred and prominent ---------- */
+.pinbig {
+  text-align: center;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  padding: 10px 0 2px;
+  color: var(--accent, #2F6BFF);
+}
+
+/* ---------- receiving: one centred ring, nothing else ---------- */
+.centerprog {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 18px 0 12px;
+}
+.bigring { width: 92px !important; height: 92px !important; }
+.bigring b { font-size: 21px !important; }
+
+/* ---------- the panel is a one-handed surface: keep it compact ---------- */
+.panel-body .sect { margin: 14px 2px 5px !important; }
+.panel-body #pbody { padding-bottom: 4px; }
+.panel-body .pempty { padding: 12px 8px; }
+.panel-body .pbadge { margin-top: 6px; }
+.panel-body .btn { padding-top: 12px; padding-bottom: 12px; }
+
+/* ---------- the swap into and out of the receiving view ----------
+   The panel re-renders its body, so the leaving view cannot animate out; instead the
+   arriving view animates in, which is what makes the change read as a transition. */
+.centerprog-in { animation: centerprogIn .34s cubic-bezier(.22,.68,.16,1) both; }
+@keyframes centerprogIn {
+  from { opacity: 0; transform: translateY(10px) scale(.94); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* and the request card leaves by shrinking, so accepting feels like a hand-off */
+#pbody { transition: opacity .18s ease; }
+
+/* ---------- the panel is a surface, not a document ----------
+   A long press on the PIN or a file name used to raise Android's text-selection
+   toolbar (Translate / Copy / Select all), which is wrong for a control panel. */
+.panel-body, .panel-body * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* the diagnostics log is the one thing worth selecting */
+.panel-body .qslog, .panel-body .qslog * { -webkit-user-select: text; user-select: text; }
+
+/* =====================================================================
+   Smoothness pass
+   ---------------------------------------------------------------------
+   Everything here animates only transform and opacity, so it stays on the
+   compositor and cannot cause layout jitter. The easings are one family:
+   a decelerating curve for arrivals, an accelerating one for exits.
+   ===================================================================== */
+:root {
+  --ease-out: cubic-bezier(.16, .84, .28, 1);
+  --ease-in:  cubic-bezier(.55, 0, .85, .3);
+  --ease-soft: cubic-bezier(.22, .68, .16, 1);
+  --dur-1: .16s;
+  --dur-2: .26s;
+  --dur-3: .4s;
+}
+
+/* ---------- arrivals: cards and rows ease up into place, slightly staggered ---- */
+@keyframes smoothRise {
+  from { opacity: 0; transform: translate3d(0, 10px, 0) scale(.994); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+/* Only elements that genuinely appear get an entrance. A blanket rule on .card or
+   .lrow would replay on every state re-render (the panel polls), which is jitter. */
+.reqcard, .centerprog, .pempty { animation: smoothRise var(--dur-3) var(--ease-out) both; }
+/* a short stagger, for the few places a list does arrive at once */
+.card.stagger:nth-child(2) { animation-delay: .04s; }
+.card.stagger:nth-child(3) { animation-delay: .08s; }
+.card.stagger:nth-child(4) { animation-delay: .12s; }
+.card.stagger:nth-child(n+5) { animation-delay: .16s; }
+
+/* ---------- press feedback: everything that can be tapped answers back ------- */
+.btn, .lrow, .pdev, .accentdot, .switch, .iconbtn, .chip, .segbtn {
+  transition: transform var(--dur-1) var(--ease-soft),
+              background-color var(--dur-1) linear,
+              box-shadow var(--dur-2) var(--ease-soft),
+              border-color var(--dur-1) linear,
+              opacity var(--dur-1) linear;
+}
+.btn:active { transform: scale(.965); }
+.lrow:active, .pdev:active { transform: scale(.988); }
+.iconbtn:active, .accentdot:active { transform: scale(.9); }
+.switch:active { transform: scale(.94); }
+
+/* ---------- switches glide rather than jump ---------------------------------- */
+.switch, .switch::after { transition: background-color var(--dur-2) var(--ease-soft),
+                          transform var(--dur-2) var(--ease-out); }
+
+/* ---------- the route swaps with a whisper of a fade, not a refresh ---------- */
+#view { transition: opacity var(--dur-1) linear; }
+#view.viewswap { animation: viewSwap var(--dur-3) var(--ease-out) both; }
+@keyframes viewSwap {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------- progress: the ring and its figure settle together ---------------- */
+.ring, .upbar i { will-change: --p, width; }
+.ptprog, .centerprog { animation: smoothRise var(--dur-3) var(--ease-out) both; }
+
+/* ---------- honour a user who has asked for less motion ---------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+/* ---------- the credits list must wrap, not ellipsis ----------
+   .lsub is nowrap + ellipsis globally, which clipped every line of the app card. */
+.creditslist li { white-space: normal !important; overflow: visible !important;
+                  text-overflow: clip !important; line-height: 1.5; }
+
+/* ---------- the launcher icon picker ---------- */
+.iconrow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.iconpick {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  background: var(--chip); border: 1px solid transparent; border-radius: 18px;
+  padding: 10px 6px; cursor: pointer; color: var(--text2); font: inherit;
+  transition: transform .16s var(--ease-soft), border-color .16s, background-color .16s;
+}
+.iconpick img { width: 52px; height: 52px; border-radius: 14px; display: block; }
+.iconpick span { font-size: 11px; text-align: center; line-height: 1.3; }
+.iconpick.on { border-color: var(--accent); background: var(--glow); color: var(--text); }
+.iconpick:active { transform: scale(.95); }

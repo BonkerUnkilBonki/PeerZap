@@ -75,6 +75,19 @@ screen — stops it completely; there is no service left running and no permanen
 notification. The only time it stays alive is for a transfer that is still in
 flight, and it stops itself the moment that transfer ends.
 
+## Google Quick Share compatibility (experimental)
+
+Under **Settings → Google Quick Share** there is a **Quick Share compatibility**
+switch. Turn it on and this device advertises itself the same way a stock Quick
+Share receiver does, so a phone running the real Google Quick Share can find it
+on the same Wi-Fi network and send files to it. Received files land in
+`Download/QuickShare`.
+
+It is **experimental**: the protocol is reverse-engineered, not official, and this
+implementation has not been verified against a real Quick Share device. It is
+Wi-Fi LAN only - both devices must be on the same network, on the same VLAN, with
+client isolation turned off. See `QUICKSHARE-INTEROP.md` for the details.
+
 ## Live progress in the panel
 
 While a transfer runs, the panel itself shows it - in **both** the Send and the

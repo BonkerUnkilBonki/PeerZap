@@ -18,6 +18,10 @@
         <item name="android:colorBackgroundCacheHint">@null</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowAnimationStyle">@style/PanelAnim</item>
+    </style>
+    <style name="PanelAnim" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/panel_in</item>
+        <item name="android:windowExitAnimation">@anim/panel_out</item>
     </style>
 </resources>

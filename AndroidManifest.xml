@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.quickshare"
-    android:versionCode="14"
-    android:versionName="1.13">
+    package="com.peerzap"
+    android:versionCode="73"
+    android:versionName="1.71">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34"/>
 
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+        android:maxSdkVersion="30"/>
+        android:maxSdkVersion="30"/>
+        android:usesPermissionFlags="neverForLocation"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
@@ -18,9 +21,20 @@
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation"/>
 
+    <!-- Lets the panel be brought to the front when a transfer arrives, which
+         Android otherwise forbids from the background. Granted by the user in
+         Settings > Display over other apps. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <!-- Needed to hand a downloaded update to the Android installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
 
     <!-- reading the user's files that they choose to send -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
@@ -48,6 +62,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
 
+        <!-- listens for stock Google Quick Share senders (Wi-Fi LAN only) -->
+        <service
+            android:name=".QsReceiveService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"/>
+
         <!-- the Quick Settings tile: opens the panel, not the app -->
         <service
             android:name=".QuickShareTileService"
@@ -67,11 +87,43 @@
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode|screenLayout"
             android:windowSoftInputMode="adjustResize">
+        </activity>
+
+        <!-- Four launcher aliases, one per icon style. Only one is enabled at a time;
+             QsBridge.setIcon() switches them. Keeping the icons as aliases is what makes
+             the launcher icon changeable at runtime - a manifest icon is not. -->
+        <activity-alias android:name=".IconLight" android:targetActivity=".MainActivity"
+            android:enabled="true" android:exported="true" android:icon="@mipmap/ic_light"
+            android:roundIcon="@mipmap/ic_light" android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-        </activity>
+        </activity-alias>
+        <activity-alias android:name=".IconLightIos" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true" android:icon="@mipmap/ic_light_ios"
+            android:roundIcon="@mipmap/ic_light_ios" android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".IconDark" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true" android:icon="@mipmap/ic_dark"
+            android:roundIcon="@mipmap/ic_dark" android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".IconDarkIos" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true" android:icon="@mipmap/ic_dark_ios"
+            android:roundIcon="@mipmap/ic_dark_ios" android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
 
         <!-- the bottom panel launched from the Quick Settings tile, and the
              default target for the Android Sharesheet -->
